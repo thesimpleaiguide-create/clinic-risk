@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinic Risk | Boundary Defense</title>
+    
+    <!-- URL FIXER -->
+    <script>
+        if (window.location.pathname.endsWith('.html/')) {
+            window.location.replace(window.location.href.replace('.html/', '.html'));
+        }
+    </script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Righteous&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .show-font { font-family: 'Righteous', cursive; }
+
+        /* Board Architecture */
+        #board-wrapper {
+            max-height: 65vh; 
+            width: 100%;
+            aspect-ratio: 16 / 9; 
+            margin: 0 auto;
+            position: relative;
+            background-color: #1e293b;
+            border-radius: 16px;
+            border: 6px solid #334155;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+        }
+
+        #board-image {
+            width: 100%;
+            height: 100%;
+            object-fit: fill; 
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+
+        #territories-layer {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+
+        /* Territory Nodes */
+        .territory-node {
+            position: absolute;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+        }
+
+        .territory-safe {
+            background: #1e40af;
+            border: 3px solid #60a5fa;
+        }
+
+        .territory-infected {
+            background: #b91c1c;
+            border: 3px solid #f87171;
+            animation: pulse-red 2s infinite;
+        }
+
+        .territory-infected:hover {
+            transform: translate(-50%, -50%) scale(1.2);
+            box-shadow: 0 0 40px rgba(239, 68, 68, 0.9);
+            border-color: #fca5a5;
+        }
+
+        .territory-safe:hover {
+            transform: translate(-50%, -50%) scale(1.1);
+            cursor: default;
+        }
+
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        /* Dice Roll Animation */
+        @keyframes roll-dice {
+            0% { transform: rotate(0deg) scale(1); }
+            25% { transform: rotate(90deg) scale(1.2); }
+            50% { transform: rotate(180deg) scale(0.9); }
+            75% { transform: rotate(270deg) scale(1.1); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+        .rolling { animation: roll-dice 0.4s linear infinite; }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .phase-hidden { display: none !important; }
+        .phase-active { display: flex; animation: zoomIn 0.5s ease-out; }
+        
+        @keyframes zoomIn { 
+            from { opacity: 0; transform: scale(0.95); } 
+            to { opacity: 1; transform: scale(1); } 
+        }
+    </style>
+</head>
+<body class="p-4 lg:p-6 text-slate-100">
+
+    <header class="w-full max-w-7xl mx-auto mb-4 flex justify-between items-center px-2">
+        <div class="flex items-center gap-4">
+            <div class="p-3 bg-rose-600 rounded-xl shadow-lg shadow-rose-900/40 text-white">
+                <i data-lucide="shield-check" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="text-3xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-500 uppercase show-font">Boundary Risk</h1>
+                <p class="text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em]">Strategic Territory Defense</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-6">
+            <div class="glass-panel px-6 py-3 rounded-2xl border border-rose-500/30 flex items-center gap-4">
+                <div class="flex flex-col items-end">
+                    <span class="text-[9px] font-black text-rose-400 uppercase tracking-widest text-nowrap text-nowrap">Clinic Heat Level</span>
+                    <span id="heat-text" class="text-xl font-black show-font text-white leading-none mt-1">3 / 7</span>
+                </div>
+                <i data-lucide="flame" class="w-8 h-8 text-rose-500"></i>
+            </div>
+        </div>
+    </header>
+
+    <!-- Phase 1: Briefing -->
+    <div id="phase-briefing" class="phase-active flex-col w-full max-w-3xl glass-panel rounded-[40px] p-12 shadow-2xl mt-10 mx-auto text-center relative overflow-hidden">
+        <h2 class="text-4xl font-black uppercase mb-6 tracking-tighter show-font italic text-rose-400 text-nowrap">Mission Protocol</h2>
+        <p class="text-lg text-slate-300 mb-10 leading-relaxed max-w-xl mx-auto font-light">
+            Conflict is spreading through the clinic. Each room represents a territory under pressure from unreasonable patient demands.
+            <br><br>
+            <strong>Objective:</strong> Click on Red (Invaded) territories. Successfully apply a de-escalation tactic to win the dice roll and clear the room. 
+            <br><br>
+            A failure causes the heat to spread. Secure the entire floor before the clinic is overrun!
+        </p>
+        <button onclick="startGame()" class="group bg-rose-600 hover:bg-rose-500 text-white font-black py-5 px-12 rounded-3xl text-2xl shadow-lg transition-all transform active:scale-95 flex items-center gap-4 mx-auto outline-none focus:outline-none">
+            INITIALIZE DEFENSES <i data-lucide="crosshair" class="w-8 h-8 group-hover:scale-125 transition-transform"></i>
+        </button>
+    </div>
+
+    <!-- Phase 2: Playing -->
+    <div id="phase-playing" class="phase-hidden flex-col w-full max-w-7xl mx-auto">
+        <div id="board-wrapper" class="relative">
+            <img id="board-image" src="https://thesimpleaiguide-create.github.io/clinic-risk/risk-board.jpeg" alt="Clinic Map">
+            <div id="territories-layer"></div>
+            
+            <div class="absolute bottom-6 left-1/2 -translate-x-1/2 glass-panel py-3 px-10 rounded-full border border-white/10 shadow-2xl z-20 pointer-events-none">
+                <p id="instruction-text" class="text-sm font-black text-rose-400 uppercase tracking-[0.3em] italic">Engage a red zone to start defense</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 3: Battle Modal -->
+    <div id="battle-modal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-xl flex items-center justify-center z-50 hidden p-6 overflow-y-auto">
+        <div class="bg-slate-900 rounded-[50px] border-4 border-slate-700 w-full max-w-3xl p-8 lg:p-10 shadow-3xl relative my-auto">
+            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-rose-600 to-red-500"></div>
+            
+            <div id="battle-view">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-4">
+                        <div class="p-4 bg-slate-950 rounded-2xl text-rose-500 shadow-inner">
+                            <i data-lucide="shield-alert" class="w-8 h-8"></i>
+                        </div>
+                        <div>
+                            <h3 id="modal-territory-name" class="text-2xl font-black uppercase tracking-tighter text-white show-font italic"></h3>
+                            <p class="text-slate-500 text-xs uppercase font-black tracking-widest">Breach Identified</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950 p-6 rounded-2xl border-l-4 border-rose-500 mb-8">
+                    <p id="modal-scenario" class="text-lg text-slate-200 italic leading-relaxed font-light"></p>
+                </div>
+
+                <p class="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] ml-2 mb-4">Strategic Response Selection:</p>
+                <div id="tactics-list" class="grid gap-3"></div>
+            </div>
+
+            <div id="dice-view" class="hidden flex-col items-center justify-center py-12">
+                <h3 class="text-3xl font-black uppercase tracking-tighter text-white show-font italic mb-8">Defensive Roll...</h3>
+                <div id="dice-icon-container" class="text-white mb-8">
+                    <i data-lucide="dice-5" class="w-32 h-32 rolling"></i>
+                </div>
+                <div id="dice-result-text" class="text-center"></div>
+                <button id="btn-continue" onclick="closeBattle()" class="hidden mt-8 bg-blue-600 hover:bg-blue-500 text-white font-black py-4 px-12 rounded-2xl shadow-lg transition-all transform active:scale-95 uppercase tracking-widest text-nowrap">
+                    Acknowledge Status
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 4: Final Result -->
+    <div id="phase-result" class="phase-hidden flex-col w-full max-w-3xl mx-auto text-center mt-10">
+        <div id="result-icon-container" class="flex items-center justify-center mx-auto mb-8 scale-110"></div>
+        <h2 id="result-title" class="text-6xl font-black uppercase mb-4 tracking-tighter show-font italic"></h2>
+        <p id="result-body" class="text-xl text-slate-300 mb-12 leading-relaxed max-w-xl mx-auto font-light"></p>
+        <button onclick="location.reload()" class="bg-amber-400 hover:bg-amber-300 text-slate-900 font-black py-6 px-16 rounded-3xl text-2xl shadow-2xl transition-all transform active:scale-95 show-font italic text-nowrap">TAKE NEXT SHIFT</button>
+    </div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSfx(freq, type, duration) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        }
+
+        // Precise Mapping for image_3968a0.jpg
+        const territoriesData = [
+            { id: 'pink-l', name: 'Consult Room 1', top: '25%', left: '15%', status: 'safe' },
+            { id: 'blue-1', name: 'Triage A', top: '25%', left: '44%', status: 'safe' },
+            { id: 'blue-2', name: 'Triage B', top: '25%', left: '56%', status: 'safe' },
+            { id: 'green-tr', name: 'Consult Room 2', top: '20%', left: '85%', status: 'safe' },
+            { id: 'yellow-main', name: 'Main Waiting Area', top: '70%', left: '55%', status: 'safe' },
+            { id: 'green-bl', name: 'Consult Room 3', top: '80%', left: '15%', status: 'safe' },
+            { id: 'green-br', name: 'Consult Room 4', top: '80%', left: '85%', status: 'safe' }
+        ];
+
+        const scenarios = [
+            {
+                scenario: "Patient demands an immediate same-day GP slot for a sore throat they've had for 3 weeks.",
+                options: [
+                    { text: "Validate then set limit: 'I see that's uncomfortable. As it's been 3 weeks, this requires a routine slot next week.'", correct: true },
+                    { text: "Tell them sore throats aren't emergencies and they are wasting triage time.", correct: false },
+                    { text: "Book them in immediately just to get them out of the waiting area.", correct: false }
+                ]
+            },
+            {
+                scenario: "Patient refuses to answer triage questions, shouting: 'I only discuss my health with a doctor!'",
+                options: [
+                    { text: "Firm Boundary: 'I understand it's private, but doctors require us to ask these to prioritize emergencies safely.'", correct: true },
+                    { text: "Argue back: 'I am fully trained to ask these questions, you need to answer them.'", correct: false },
+                    { text: "Give up and put them directly on the GP callback list to avoid a scene.", correct: false }
+                ]
+            },
+            {
+                scenario: "Patient arrives 25 minutes late for their appointment and demands to be seen right now anyway.",
+                options: [
+                    { text: "Fairness Frame: 'The GP has already moved on to the next patient to be fair to everyone waiting. We must rebook.'", correct: true },
+                    { text: "Blame them: 'You are 25 minutes late, it is your own fault the doctor won't see you.'", correct: false },
+                    { text: "Ask the GP to squeeze them in quickly so they don't complain.", correct: false }
+                ]
+            },
+            {
+                scenario: "Patient aggressively threatens to leave a 1-star Google review if they aren't prescribed antibiotics today.",
+                options: [
+                    { text: "De-escalate & Hold: 'I hear you're frustrated, but prescribing is a clinical decision based on safety, not reviews.'", correct: true },
+                    { text: "Threaten them back: 'If you leave a bad review, we will remove you from our patient list.'", correct: false },
+                    { text: "Apologize repeatedly and ask the doctor if they can just do a quick prescription.", correct: false }
+                ]
+            }
+        ];
+
+        let state = {
+            territories: JSON.parse(JSON.stringify(territoriesData)),
+            activeTerritoryId: null,
+            isRolling: false
+        };
+
+        function startGame() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            // Randomly infect 3 territories to start
+            let shuffled = [...state.territories].sort(() => 0.5 - Math.random());
+            for(let i=0; i<3; i++) {
+                shuffled[i].status = 'infected';
+            }
+
+            document.getElementById('phase-briefing').classList.add('phase-hidden');
+            document.getElementById('phase-playing').classList.remove('phase-hidden');
+            document.getElementById('phase-playing').classList.add('flex');
+            
+            renderBoard();
+        }
+
+        function getInfectedCount() {
+            return state.territories.filter(t => t.status === 'infected').length;
+        }
+
+        function renderBoard() {
+            const container = document.getElementById('territories-layer');
+            container.innerHTML = state.territories.map(t => {
+                const isSafe = t.status === 'safe';
+                const icon = isSafe ? 'shield' : 'user-x';
+                const cls = isSafe ? 'territory-safe text-blue-200' : 'territory-infected text-white';
+                
+                return `
+                <div id="terr-${t.id}" class="territory-node ${cls}" 
+                     style="top: ${t.top}; left: ${t.left};" 
+                     ${!isSafe ? `onclick="engageTerritory('${t.id}')"` : ''}>
+                     <i data-lucide="${icon}" class="w-6 h-6 pointer-events-none"></i>
+                </div>
+                `;
+            }).join('');
+            
+            document.getElementById('heat-text').innerText = `${getInfectedCount()} / 7`;
+            lucide.createIcons();
+        }
+
+        function engageTerritory(id) {
+            if (state.isRolling) return;
+            state.activeTerritoryId = id;
+            
+            const territory = state.territories.find(t => t.id === id);
+            const scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+            
+            document.getElementById('modal-territory-name').innerText = territory.name;
+            document.getElementById('modal-scenario').innerText = `"${scenario.scenario}"`;
+            
+            const shuffledOptions = [...scenario.options].sort(() => Math.random() - 0.5);
+            
+            document.getElementById('tactics-list').innerHTML = shuffledOptions.map(opt => `
+                <button onclick="rollDefense(${opt.correct})" class="w-full text-left p-5 rounded-2xl bg-slate-950 border-2 border-slate-800 hover:border-rose-500 transition-all group flex justify-between items-center">
+                    <span class="max-w-[90%] text-slate-200 leading-snug font-medium">${opt.text}</span>
+                    <i data-lucide="dices" class="w-6 h-6 opacity-0 group-hover:opacity-100 text-rose-400 flex-shrink-0 ml-2"></i>
+                </button>
+            `).join('');
+            
+            document.getElementById('battle-view').classList.remove('hidden');
+            document.getElementById('dice-view').classList.add('hidden');
+            document.getElementById('btn-continue').classList.add('hidden');
+            document.getElementById('battle-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function rollDefense(isCorrectTactic) {
+            state.isRolling = true;
+            document.getElementById('battle-view').classList.add('hidden');
+            document.getElementById('dice-view').classList.remove('hidden');
+            document.getElementById('dice-view').classList.add('flex');
+            
+            const iconContainer = document.getElementById('dice-icon-container');
+            const resultText = document.getElementById('dice-result-text');
+            const btnContinue = document.getElementById('btn-continue');
+            
+            iconContainer.innerHTML = `<i data-lucide="dices" class="w-32 h-32 rolling"></i>`;
+            resultText.innerHTML = '<span class="text-xl text-slate-400 animate-pulse">Calculating de-escalation odds...</span>';
+            lucide.createIcons();
+            playSfx(400, 'sine', 0.5);
+
+            setTimeout(() => {
+                if (isCorrectTactic) {
+                    playSfx(800, 'sine', 0.4);
+                    iconContainer.innerHTML = `<i data-lucide="dice-6" class="w-32 h-32 text-emerald-400"></i>`;
+                    resultText.innerHTML = '<h4 class="text-3xl font-black text-emerald-400 uppercase tracking-tighter">CRITICAL SUCCESS!</h4><p class="text-slate-400 mt-2">Territory Defended & Cleared.</p>';
+                    const terr = state.territories.find(t => t.id === state.activeTerritoryId);
+                    terr.status = 'safe';
+                } else {
+                    playSfx(150, 'sawtooth', 0.6);
+                    iconContainer.innerHTML = `<i data-lucide="dice-1" class="w-32 h-32 text-red-500"></i>`;
+                    resultText.innerHTML = '<h4 class="text-3xl font-black text-red-500 uppercase tracking-tighter">DEFENSE FAILED</h4><p class="text-slate-400 mt-2">Poor tactic deployed. Infection spreads.</p>';
+                    const safeTerritories = state.territories.filter(t => t.status === 'safe');
+                    if (safeTerritories.length > 0) {
+                        const randomSafe = safeTerritories[Math.floor(Math.random() * safeTerritories.length)];
+                        randomSafe.status = 'infected';
+                    }
+                }
+                
+                lucide.createIcons();
+                btnContinue.classList.remove('hidden');
+                state.isRolling = false;
+            }, 1500);
+        }
+
+        function closeBattle() {
+            document.getElementById('battle-modal').classList.add('hidden');
+            renderBoard();
+            checkGameState();
+        }
+
+        function checkGameState() {
+            const count = getInfectedCount();
+            if (count === 0) endGame(true);
+            else if (count >= 7) endGame(false);
+        }
+
+        function endGame(won) {
+            document.getElementById('phase-playing').classList.add('phase-hidden');
+            document.getElementById('phase-playing').classList.remove('flex');
+            document.getElementById('phase-result').classList.remove('phase-hidden');
+            document.getElementById('phase-result').classList.add('flex');
+            
+            const title = document.getElementById('result-title');
+            const body = document.getElementById('result-body');
+            const icon = document.getElementById('result-icon-container');
+
+            if (won) {
+                icon.innerHTML = `<div class="w-32 h-32 bg-blue-600 rounded-[40px] flex items-center justify-center shadow-2xl"><i data-lucide="globe" class="w-16 h-16 text-white"></i></div>`;
+                title.innerText = "CLINIC SECURED"; 
+                title.className = "text-6xl font-black uppercase mb-4 tracking-tighter show-font italic text-blue-400";
+                body.innerText = "Outstanding strategy. By deploying correct professional boundaries and de-escalation tactics, you successfully defended all territories from unreasonable demands.";
+            } else {
+                icon.innerHTML = `<div class="w-32 h-32 bg-red-600 rounded-[40px] flex items-center justify-center shadow-2xl"><i data-lucide="skull" class="w-16 h-16 text-white"></i></div>`;
+                title.innerText = "CLINIC OVERRUN"; 
+                title.className = "text-6xl font-black uppercase mb-4 tracking-tighter show-font italic text-red-500";
+                body.innerText = "Defenses breached. Poor communication caused the conflict to spread until every territory was overrun. Shift terminated.";
+            }
+            lucide.createIcons();
+        }
+    </script>
+</body>
+</html>
